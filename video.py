@@ -27,7 +27,7 @@ def determine_size(deck: StreamDeck):
 
 # Crops out a key-sized image from a larger deck-sized image, at the location
 # occupied by the given key index.
-def crop_key_image_from_deck_sized_image(deck, image, key_spacing, key):
+def crop_key_image_from_deck_sized_image(deck: StreamDeck, image, key_spacing, key):
     key_rows, key_cols = deck.key_layout()
     key_width, key_height = deck.key_image_format()['size']
     spacing_x, spacing_y = key_spacing
@@ -67,7 +67,8 @@ def key_change_callback(deck, key, state):
 
 
 if __name__ == "__main__":
-    fps = int(sys.argv[1])
+    fps = Fraction(sys.argv[1])
+    print("Target FPS: {0:.2f} ({0})".format(fps))
     streamdecks = DeviceManager().enumerate()
     print("Found {} Stream Deck(s).\n".format(len(streamdecks)))
 
@@ -88,27 +89,31 @@ if __name__ == "__main__":
         frame_time = Fraction(1, fps)
         next_frame = Fraction(time.monotonic())
 
+        image_byte_count = size[0] * size[1] * 3
         i = 0
         while True:
-            image = Image.frombytes('RGB', size, sys.stdin.buffer.read(size[0] * size[1] * 3))
+            image_bytes = sys.stdin.buffer.read(image_byte_count)
             next_frame += frame_time
             if Fraction(time.monotonic()) > next_frame:
                 # We're behind, skip this frame
                 continue
-
-            key_images = dict()
-            for k in range(deck.key_count()):
-                key_images[k] = crop_key_image_from_deck_sized_image(deck, image, key_spacing, k)
-
-            # Use a scoped-with on the deck to ensure we're the only thread
-            # using it right now.
-            with deck:
-                # Draw the individual key images to each of the keys.
+            if len(image_bytes) == image_byte_count:
+                image = Image.frombytes('RGB', size, image_bytes)
+                key_images = dict()
                 for k in range(deck.key_count()):
-                    key_image = key_images[k]
+                    key_images[k] = crop_key_image_from_deck_sized_image(deck, image, key_spacing, k)
 
-                    # Show the section of the main image onto the key.
-                    deck.set_key_image(k, key_image)
+                # Use a scoped-with on the deck to ensure we're the only thread
+                # using it right now.
+                with deck:
+                    # Draw the individual key images to each of the keys.
+                    for k in range(deck.key_count()):
+                        key_image = key_images[k]
+
+                        # Show the section of the main image onto the key.
+                        deck.set_key_image(k, key_image)
+            else:
+                break
 
             sleep_interval = float(next_frame) - time.monotonic()
             if sleep_interval >= 0:
