@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import sys
-import threading
 import time
+from fractions import Fraction
 
 from PIL import Image
 from StreamDeck.DeviceManager import DeviceManager
@@ -10,23 +10,20 @@ from StreamDeck.Devices.StreamDeckOriginal import StreamDeckOriginal
 from StreamDeck.ImageHelpers import PILHelper
 
 
-# -vf "scale=504:288:force_original_aspect_ratio=increase,crop=504:288"
-# img = Image.frombytes('RGB', (width, height), in_bytes)
-
-# ffmpeg -i bunny_640_5s.m4v -vf "scale=504:288:force_original_aspect_ratio=increase,crop=504:288" -vcodec rawvideo -pix_fmt rgb24 -f rawvideo bunny_scaled.rgbframes
-
 def spacing(deck: StreamDeck):
     default_spacing = (36, 36)
     return {
         StreamDeckOriginal.DECK_TYPE: (36, 36),
     }.get(deck.deck_type, default_spacing)
 
+
 def determine_size(deck: StreamDeck):
     key_spacing = spacing(deck)
     image_format = deck.key_image_format()
     rows, cols = deck.key_layout()
-    return (cols*image_format['size'][0] + (cols-1)*key_spacing[0],
-            rows*image_format['size'][1] + (rows-1)*key_spacing[1])
+    return (cols * image_format['size'][0] + (cols - 1) * key_spacing[0],
+            rows * image_format['size'][1] + (rows - 1) * key_spacing[1])
+
 
 # Crops out a key-sized image from a larger deck-sized image, at the location
 # occupied by the given key index.
@@ -70,11 +67,11 @@ def key_change_callback(deck, key, state):
 
 
 if __name__ == "__main__":
+    fps = int(sys.argv[1])
     streamdecks = DeviceManager().enumerate()
     print("Found {} Stream Deck(s).\n".format(len(streamdecks)))
 
     for index, deck in enumerate(streamdecks):
-        # This example only works with devices that have screens.
         if not deck.is_visual():
             continue
         deck.open()
@@ -87,12 +84,17 @@ if __name__ == "__main__":
 
         # Register callback function for when a key state changes.
         deck.set_key_callback(key_change_callback)
+        key_spacing = spacing(deck)
+        frame_time = Fraction(1, fps)
+        next_frame = Fraction(time.monotonic())
 
         i = 0
         while True:
-            #image = Image.open(fn)
-            image = Image.frombytes('RGB', size, sys.stdin.buffer.read(size[0]*size[1]*3))
-            key_spacing = spacing(deck)
+            image = Image.frombytes('RGB', size, sys.stdin.buffer.read(size[0] * size[1] * 3))
+            next_frame += frame_time
+            if Fraction(time.monotonic()) > next_frame:
+                # We're behind, skip this frame
+                continue
 
             key_images = dict()
             for k in range(deck.key_count()):
@@ -107,3 +109,7 @@ if __name__ == "__main__":
 
                     # Show the section of the main image onto the key.
                     deck.set_key_image(k, key_image)
+
+            sleep_interval = float(next_frame) - time.monotonic()
+            if sleep_interval >= 0:
+                time.sleep(sleep_interval)
