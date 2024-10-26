@@ -1,3 +1,6 @@
 .idea
+.env
+*.pyc
 *bunny*
 *Bunny*
+user_token.json
